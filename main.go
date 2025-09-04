@@ -42,6 +42,47 @@ func connect(rpcs []string) (*ethclient.Client, string, error) {
 	return nil, "", fmt.Errorf("all RPCs failed")
 }
 
+// sendDiscordAlert sends a message to a Discord channel using a webhook, with color.
+func sendDiscordAlert(webhookURL, message string, color int) error {
+	payload := map[string]interface{}{
+		"embeds": []map[string]interface{}{
+			{
+				"title":       "Livepeer Reward Watchdog Alert",
+				"description": message,
+				"color":       color,
+			},
+		},
+	}
+	body, _ := json.Marshal(payload)
+	resp, err := http.Post(webhookURL, "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return nil
+}
+
+// sendAlert sends to both Discord and Telegram if configured.
+func sendAlert(botToken, chatID, discordWebhook, message string, color int) error {
+	var failed []string
+	if discordWebhook != "" {
+		if err := sendDiscordAlert(discordWebhook, message, color); err != nil {
+			log.Printf("Discord alert error: %v", err)
+			failed = append(failed, "Discord")
+		}
+	}
+	if botToken != "" && chatID != "" {
+		if err := sendTelegramAlert(botToken, chatID, message); err != nil {
+			log.Printf("Telegram alert error: %v", err)
+			failed = append(failed, "Telegram")
+		}
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("alert failed for: %s", strings.Join(failed, ", "))
+	}
+	return nil
+}
+
 // sendTelegramAlert sends a message to a Telegram chat using a bot.
 func sendTelegramAlert(botToken, chatID, message string) error {
 	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", botToken)
@@ -83,8 +124,9 @@ func main() {
 	// Load config values from environment.
 	botToken := os.Getenv("TELEGRAM_BOT_TOKEN")
 	chatID := os.Getenv("TELEGRAM_CHAT_ID")
-	if botToken == "" || chatID == "" {
-		log.Fatal("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set in the environment")
+	discordWebhook := os.Getenv("DISCORD_WEBHOOK_URL")
+	if discordWebhook == "" && (botToken == "" || chatID == "") {
+		log.Fatal("Either DISCORD_WEBHOOK_URL or both TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set in the environment")
 	}
 
 	// Load ABIs.
@@ -106,6 +148,10 @@ func main() {
 		log.Fatalf("parse RoundsManager ABI: %v", err)
 	}
 	newRoundEvent := roundsABI.Events["NewRound"]
+
+	// Test telegram and Discord alerts.
+	testMsg := fmt.Sprintf("🚨 Reward Watchdog started for %s with delay %s and check interval %s", orch.Hex(), delayFlag.String(), checkIntervalFlag.String())
+	sendAlert(botToken, chatID, discordWebhook, testMsg, 0xFFAA00)
 
 	// Subscribe to events.
 	rewardCh := make(chan types.Log)
@@ -148,18 +194,18 @@ func main() {
 		select {
 		case err := <-rewardSub.Err():
 			log.Printf("Reward subscription error: %v", err)
-			sendTelegramAlert(botToken, chatID, fmt.Sprintf("⚠️ Reward subscription error: %v", err))
+			sendAlert(botToken, chatID, discordWebhook, fmt.Sprintf("⚠️ Reward subscription error: %v", err), 0xFF0000)
 			return
 		case err := <-roundSub.Err():
 			log.Printf("NewRound subscription error: %v", err)
-			sendTelegramAlert(botToken, chatID, fmt.Sprintf("⚠️ NewRound subscription error: %v", err))
+			sendAlert(botToken, chatID, discordWebhook, fmt.Sprintf("⚠️ NewRound subscription error: %v", err), 0xFF0000)
 			return
 		case vLog := <-rewardCh:
 			// Reward called for this round.
 			rewardCalled = true
 			alertMsg := fmt.Sprintf("✅ Reward called for %s at block %d, tx %s", orch.Hex(), vLog.BlockNumber, vLog.TxHash.Hex())
 			log.Println(alertMsg)
-			sendTelegramAlert(botToken, chatID, alertMsg)
+			sendAlert(botToken, chatID, discordWebhook, alertMsg, 0x00FF00)
 		case vLog := <-roundCh:
 			// New round started.
 			var roundNum uint64
@@ -178,7 +224,7 @@ func main() {
 					if *repeatFlag || !sentWarning {
 						alertMsg := fmt.Sprintf("❌ No reward called for %s in round %d after %s", orch.Hex(), currentRound, delayFlag.String())
 						log.Println(alertMsg)
-						sendTelegramAlert(botToken, chatID, alertMsg)
+						sendAlert(botToken, chatID, discordWebhook, alertMsg, 0xFF0000)
 						sentWarning = true
 					}
 				}

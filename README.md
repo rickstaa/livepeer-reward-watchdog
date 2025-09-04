@@ -15,7 +15,35 @@ This Go script monitors the Livepeer protocol on Arbitrum and alerts you via Tel
 
 - [Go 1.21+](https://go.dev/)
 - A working Ethereum WebSocket RPC endpoint (e.g., `wss://arb1.arbitrum.io/ws`).
-- Telegram bot token and chat ID (required).
+- Telegram bot token and chat ID (required for Telegram alerts).
+- Discord webhook URL (required for Discord alerts).
+
+## Alert Setup Instructions
+
+### Telegram Bot Setup
+
+1. Open Telegram and search for [@BotFather](https://t.me/BotFather).
+2. Start a chat and send `/newbot` to create a new bot. Follow the instructions to get your bot token.
+3. Start a chat with your new bot (search for its username and click "Start").
+4. To get your chat ID:
+
+   - Send a message to your bot.
+   - Visit: `https://api.telegram.org/bot<your_bot_token>/getUpdates` in your browser (replace `<your_bot_token>`).
+   - Look for `"chat":{"id":...}` in the response; that's your chat ID.
+   - For group chats, add the bot to the group, send a message, and use the same method.
+
+5. Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` as environment variables.
+
+More info: [Telegram Bot API docs](https://core.telegram.org/bots#botfather)
+
+### Discord Webhook Setup
+
+1. Go to your Discord server and open the channel you want alerts in.
+2. Click the gear icon (Edit Channel) > Integrations > Webhooks > New Webhook.
+3. Name your webhook and copy the webhook URL.
+4. Set `DISCORD_WEBHOOK_URL` as an environment variable.
+
+More info: [Discord Webhooks Guide](https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks)
 
 ## Usage
 
@@ -26,6 +54,7 @@ Run the script directly on your machine:
 ```bash
 export TELEGRAM_BOT_TOKEN=your_bot_token
 export TELEGRAM_CHAT_ID=your_chat_id
+export DISCORD_WEBHOOK_URL=your_webhook_url
 
 go run main.go --delay=2h --check-interval=1h <orchestrator-address> wss://arb1.arbitrum.io/ws
 ```
