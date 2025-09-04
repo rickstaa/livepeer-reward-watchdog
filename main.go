@@ -101,6 +101,7 @@ func main() {
 	delayFlag := flag.Duration("delay", 2*time.Hour, "Time to wait after new round before warning (e.g. 2h, 30m)")
 	checkIntervalFlag := flag.Duration("check-interval", 1*time.Hour, "How often to check and repeat warning if reward not called (e.g. 1h)")
 	repeatFlag := flag.Bool("repeat", true, "Repeat warning every check-interval (true) or only send once per round (false)")
+	onlyRewardErrorsFlag := flag.Bool("only-reward-errors", false, "Only send alerts for reward call errors (ignore success alerts)")
 	flag.Parse()
 
 	args := flag.Args()
@@ -148,10 +149,6 @@ func main() {
 		log.Fatalf("parse RoundsManager ABI: %v", err)
 	}
 	newRoundEvent := roundsABI.Events["NewRound"]
-
-	// Test telegram and Discord alerts.
-	testMsg := fmt.Sprintf("🚨 Reward Watchdog started for %s with delay %s and check interval %s", orch.Hex(), delayFlag.String(), checkIntervalFlag.String())
-	sendAlert(botToken, chatID, discordWebhook, testMsg, 0xFFAA00)
 
 	// Subscribe to events.
 	rewardCh := make(chan types.Log)
@@ -205,7 +202,9 @@ func main() {
 			rewardCalled = true
 			alertMsg := fmt.Sprintf("✅ Reward called for %s at block %d, tx %s", orch.Hex(), vLog.BlockNumber, vLog.TxHash.Hex())
 			log.Println(alertMsg)
-			sendAlert(botToken, chatID, discordWebhook, alertMsg, 0x00FF00)
+			if !*onlyRewardErrorsFlag {
+				sendAlert(botToken, chatID, discordWebhook, alertMsg, 0x00FF00)
+			}
 		case vLog := <-roundCh:
 			// New round started.
 			var roundNum uint64

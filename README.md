@@ -61,6 +61,7 @@ go run main.go --delay=2h --check-interval=1h <orchestrator-address> wss://arb1.
 
 - `--delay` sets how long to wait after a new round before sending the first warning (default: 2h).
 - `--check-interval` sets how often to check and repeat the warning if the reward is not called (default: 1h).
+- `--only-reward-errors` if set, only sends alerts for reward call errors (ignores success alerts).
 
 ### Docker & Docker Compose
 
