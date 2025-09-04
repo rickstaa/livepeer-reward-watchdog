@@ -101,6 +101,7 @@ func main() {
 	checkIntervalFlag := flag.Duration("check-interval", 1*time.Hour, "How often to check and repeat warning if reward not called (e.g. 1h)")
 	repeatFlag := flag.Bool("repeat", true, "Repeat warning every check-interval (true) or only send once per round (false)")
 	onlyRewardErrorsFlag := flag.Bool("only-reward-errors", false, "Only send alerts for reward call errors (ignore success alerts)")
+	maxRetryTimeFlag := flag.Duration("max-retry-time", 30*time.Minute, "Max time to retry RPC connections before giving up (0 = retry forever)")
 	flag.Parse()
 
 	args := flag.Args()
@@ -114,13 +115,6 @@ func main() {
 		rpcs = args[1:]
 	}
 
-	client, usedRPC, err := connect(rpcs)
-	if err != nil {
-		log.Fatalf("RPC connection failed: %v", err)
-	}
-	defer client.Close()
-	log.Printf("Connected to %s", usedRPC)
-
 	// Load config values from environment.
 	botToken := os.Getenv("TELEGRAM_BOT_TOKEN")
 	chatID := os.Getenv("TELEGRAM_CHAT_ID")
@@ -129,103 +123,133 @@ func main() {
 		log.Fatal("Either DISCORD_WEBHOOK_URL or both TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set in the environment")
 	}
 
-	// Load ABIs.
-	bondingABIBytes, err := os.ReadFile("ABI/BondingManager.json")
-	if err != nil {
-		log.Fatalf("failed to read BondingManager ABI file: %v", err)
-	}
-	bondingABI, err := abi.JSON(strings.NewReader(string(bondingABIBytes)))
-	if err != nil {
-		log.Fatalf("parse BondingManager ABI: %v", err)
-	}
-	rewardEvent := bondingABI.Events["Reward"]
-	roundsABIBytes, err := os.ReadFile("ABI/RoundsManager.json")
-	if err != nil {
-		log.Fatalf("failed to read RoundsManager ABI file: %v", err)
-	}
-	roundsABI, err := abi.JSON(strings.NewReader(string(roundsABIBytes)))
-	if err != nil {
-		log.Fatalf("parse RoundsManager ABI: %v", err)
-	}
-	newRoundEvent := roundsABI.Events["NewRound"]
-
-	// Subscribe to events.
-	rewardCh := make(chan types.Log)
-	rewardSub, err := client.SubscribeFilterLogs(context.Background(), ethereum.FilterQuery{
-		Addresses: []common.Address{bondingManager},
-		Topics: [][]common.Hash{
-			{rewardEvent.ID},
-			{common.BytesToHash(orch.Bytes())},
-		},
-	}, rewardCh)
-	if err != nil {
-		log.Fatalf("Subscribe error (Reward): %v", err)
-	}
-	roundCh := make(chan types.Log)
-	roundSub, err := client.SubscribeFilterLogs(context.Background(), ethereum.FilterQuery{
-		Addresses: []common.Address{roundsManager},
-		Topics: [][]common.Hash{
-			{newRoundEvent.ID},
-		},
-	}, roundCh)
-	if err != nil {
-		log.Fatalf("Subscribe error (NewRound): %v", err)
-	}
-
-	// Monitor rounds and rewards and send alerts.
+	// Monitor rounds and rewards with RPC failover.
 	var currentRound uint64
 	var roundStart time.Time
 	rewardCalled := false
-	log.Println("Monitoring started...")
-
-	var ticker *time.Ticker
-	if *checkIntervalFlag <= 0 {
-		log.Fatalf("check-interval must be > 0")
-	}
-	ticker = time.NewTicker(*checkIntervalFlag)
-	defer ticker.Stop()
 	sentWarning := false
+	retryStartTime := time.Now()
 	for {
-		select {
-		case err := <-rewardSub.Err():
-			log.Printf("Reward subscription error: %v", err)
-			sendAlert(botToken, chatID, discordWebhook, fmt.Sprintf("⚠️ Reward subscription error: %v", err), 0xFF0000)
-			return
-		case err := <-roundSub.Err():
-			log.Printf("NewRound subscription error: %v", err)
-			sendAlert(botToken, chatID, discordWebhook, fmt.Sprintf("⚠️ NewRound subscription error: %v", err), 0xFF0000)
-			return
-		case vLog := <-rewardCh:
-			// Reward called for this round.
-			rewardCalled = true
-			alertMsg := fmt.Sprintf("✅ Reward called for %s at block %d, tx %s", orch.Hex(), vLog.BlockNumber, vLog.TxHash.Hex())
-			log.Println(alertMsg)
-			if !*onlyRewardErrorsFlag {
-				sendAlert(botToken, chatID, discordWebhook, alertMsg, 0x00FF00)
-			}
-		case vLog := <-roundCh:
-			// New round started.
-			var roundNum uint64
-			if len(vLog.Topics) > 1 {
-				roundNum = vLog.Topics[1].Big().Uint64()
-			}
-			currentRound = roundNum
-			roundStart = time.Now()
-			rewardCalled = false
-			sentWarning = false
-			log.Printf("New round %d started", currentRound)
-		case <-ticker.C:
-			if !rewardCalled && !roundStart.IsZero() {
-				elapsed := time.Since(roundStart)
-				if elapsed >= *delayFlag {
-					if *repeatFlag || !sentWarning {
-						alertMsg := fmt.Sprintf("❌ No reward called for %s in round %d after %s", orch.Hex(), currentRound, delayFlag.String())
-						log.Println(alertMsg)
-						sendAlert(botToken, chatID, discordWebhook, alertMsg, 0xFF0000)
-						sentWarning = true
+		// Stop if max retry time exceeded.
+		if *maxRetryTimeFlag > 0 && time.Since(retryStartTime) > *maxRetryTimeFlag {
+			log.Fatalf("Failed to connect to any RPC after %v, giving up", *maxRetryTimeFlag)
+		}
+
+		client, usedRPC, err := connect(rpcs)
+		if err != nil {
+			log.Printf("All RPCs failed, retrying in 10s...")
+			time.Sleep(10 * time.Second)
+			continue
+		}
+		log.Printf("Connected to %s", usedRPC)
+
+		// Reset retry timer on successful connection.
+		retryStartTime = time.Now()
+
+		// Load ABIs.
+		bondingABIBytes, err := os.ReadFile("ABI/BondingManager.json")
+		if err != nil {
+			log.Fatalf("failed to read BondingManager ABI file: %v", err)
+		}
+		bondingABI, err := abi.JSON(strings.NewReader(string(bondingABIBytes)))
+		if err != nil {
+			log.Fatalf("parse BondingManager ABI: %v", err)
+		}
+		rewardEvent := bondingABI.Events["Reward"]
+		roundsABIBytes, err := os.ReadFile("ABI/RoundsManager.json")
+		if err != nil {
+			log.Fatalf("failed to read RoundsManager ABI file: %v", err)
+		}
+		roundsABI, err := abi.JSON(strings.NewReader(string(roundsABIBytes)))
+		if err != nil {
+			log.Fatalf("parse RoundsManager ABI: %v", err)
+		}
+		newRoundEvent := roundsABI.Events["NewRound"]
+
+		// Subscribe to events.
+		rewardCh := make(chan types.Log)
+		rewardSub, err := client.SubscribeFilterLogs(context.Background(), ethereum.FilterQuery{
+			Addresses: []common.Address{bondingManager},
+			Topics: [][]common.Hash{
+				{rewardEvent.ID},
+				{common.BytesToHash(orch.Bytes())},
+			},
+		}, rewardCh)
+		if err != nil {
+			log.Printf("Reward subscription failed: %v", err)
+			client.Close()
+			time.Sleep(5 * time.Second)
+			continue
+		}
+		roundCh := make(chan types.Log)
+		roundSub, err := client.SubscribeFilterLogs(context.Background(), ethereum.FilterQuery{
+			Addresses: []common.Address{roundsManager},
+			Topics: [][]common.Hash{
+				{newRoundEvent.ID},
+			},
+		}, roundCh)
+		if err != nil {
+			log.Printf("NewRound subscription failed: %v", err)
+			rewardSub.Unsubscribe()
+			client.Close()
+			time.Sleep(5 * time.Second)
+			continue
+		}
+
+		log.Println("Monitoring started...")
+		ticker := time.NewTicker(*checkIntervalFlag)
+
+		// Monitor until websocket connection fails.
+	monitorLoop:
+		for {
+			select {
+			case err := <-rewardSub.Err():
+				log.Printf("Reward subscription error: %v", err)
+				sendAlert(botToken, chatID, discordWebhook, fmt.Sprintf("⚠️ Reward subscription error: %v", err), 0xFF0000)
+				break monitorLoop
+			case err := <-roundSub.Err():
+				log.Printf("NewRound subscription error: %v", err)
+				sendAlert(botToken, chatID, discordWebhook, fmt.Sprintf("⚠️ NewRound subscription error: %v", err), 0xFF0000)
+				break monitorLoop
+			case vLog := <-rewardCh:
+				// Reward called for this round.
+				rewardCalled = true
+				alertMsg := fmt.Sprintf("✅ Reward called for %s at block %d, tx %s", orch.Hex(), vLog.BlockNumber, vLog.TxHash.Hex())
+				log.Println(alertMsg)
+				if !*onlyRewardErrorsFlag {
+					sendAlert(botToken, chatID, discordWebhook, alertMsg, 0x00FF00)
+				}
+			case vLog := <-roundCh:
+				// New round started.
+				var roundNum uint64
+				if len(vLog.Topics) > 1 {
+					roundNum = vLog.Topics[1].Big().Uint64()
+				}
+				currentRound = roundNum
+				roundStart = time.Now()
+				rewardCalled = false
+				sentWarning = false
+				log.Printf("New round %d started", currentRound)
+			case <-ticker.C:
+				if !rewardCalled && !roundStart.IsZero() {
+					elapsed := time.Since(roundStart)
+					if elapsed >= *delayFlag {
+						if *repeatFlag || !sentWarning {
+							alertMsg := fmt.Sprintf("❌ No reward called for %s in round %d after %s", orch.Hex(), currentRound, delayFlag.String())
+							log.Println(alertMsg)
+							sendAlert(botToken, chatID, discordWebhook, alertMsg, 0xFF0000)
+							sentWarning = true
+						}
 					}
 				}
 			}
 		}
+
+		// Cleanup before reconnecting.
+		ticker.Stop()
+		rewardSub.Unsubscribe()
+		roundSub.Unsubscribe()
+		client.Close()
+		time.Sleep(5 * time.Second) // Brief pause before reconnecting
 	}
 }
