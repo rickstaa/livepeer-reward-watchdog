@@ -24,8 +24,7 @@ var bondingManager = common.HexToAddress("0x35Bcf3c30594191d53231E4FF333E8A77045
 // RoundsManager contract: https://arbiscan.io/address/0xdd6f56DcC28D3F5f27084381fE8Df634985cc39f
 var roundsManager = common.HexToAddress("0xdd6f56DcC28D3F5f27084381fE8Df634985cc39f")
 
-// connect tries to connect to one of the provided RPC URLs and returns the first
-// successful connection.
+// Connect tries to connect to one of the provided RPC URLs and returns the first.
 func connect(rpcs []string) (*ethclient.Client, string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -97,7 +96,7 @@ func sendTelegramAlert(botToken, chatID, message string) error {
 }
 
 func main() {
-	// Flags for delay and notification interval
+	// Flags for delay and notification interval.
 	delayFlag := flag.Duration("delay", 2*time.Hour, "Time to wait after new round before warning (e.g. 2h, 30m)")
 	checkIntervalFlag := flag.Duration("check-interval", 1*time.Hour, "How often to check and repeat warning if reward not called (e.g. 1h)")
 	repeatFlag := flag.Bool("repeat", true, "Repeat warning every check-interval (true) or only send once per round (false)")
@@ -186,7 +185,6 @@ func main() {
 	ticker = time.NewTicker(*checkIntervalFlag)
 	defer ticker.Stop()
 	sentWarning := false
-
 	for {
 		select {
 		case err := <-rewardSub.Err():
