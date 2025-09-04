@@ -1,0 +1,17 @@
+version: "3.8"
+services:
+  reward-watchdog:
+    build: .
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+    command:
+      [
+        "/app/reward-watchdog",
+        "--delay=2h",
+        "--notify-interval=1h",
+        "<orchestrator-address>",
+        "wss://arb1.arbitrum.io/ws",
+      ]
+    volumes:
+      - ./ABI:/app/ABI
