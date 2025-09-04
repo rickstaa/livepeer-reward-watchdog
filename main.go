@@ -58,7 +58,8 @@ func sendTelegramAlert(botToken, chatID, message string) error {
 func main() {
 	// Flags for delay and notification interval
 	delayFlag := flag.Duration("delay", 2*time.Hour, "Time to wait after new round before warning (e.g. 2h, 30m)")
-	notifyIntervalFlag := flag.Duration("notify-interval", 0, "How often to repeat warning if reward not called (e.g. 1h, 0 for no repeat)")
+	checkIntervalFlag := flag.Duration("check-interval", 1*time.Hour, "How often to check and repeat warning if reward not called (e.g. 1h)")
+	repeatFlag := flag.Bool("repeat", true, "Repeat warning every check-interval (true) or only send once per round (false)")
 	flag.Parse()
 
 	args := flag.Args()
@@ -134,8 +135,15 @@ func main() {
 	var roundStart time.Time
 	rewardCalled := false
 	log.Println("Monitoring started...")
-	ticker := time.NewTicker(*notifyIntervalFlag)
+
+	var ticker *time.Ticker
+	if *checkIntervalFlag <= 0 {
+		log.Fatalf("check-interval must be > 0")
+	}
+	ticker = time.NewTicker(*checkIntervalFlag)
 	defer ticker.Stop()
+	sentWarning := false
+
 	for {
 		select {
 		case err := <-rewardSub.Err():
@@ -161,14 +169,18 @@ func main() {
 			currentRound = roundNum
 			roundStart = time.Now()
 			rewardCalled = false
+			sentWarning = false
 			log.Printf("New round %d started", currentRound)
 		case <-ticker.C:
 			if !rewardCalled && !roundStart.IsZero() {
 				elapsed := time.Since(roundStart)
 				if elapsed >= *delayFlag {
-					alertMsg := fmt.Sprintf("❌ No reward called for %s in round %d after %s", orch.Hex(), currentRound, delayFlag.String())
-					log.Println(alertMsg)
-					sendTelegramAlert(botToken, chatID, alertMsg)
+					if *repeatFlag || !sentWarning {
+						alertMsg := fmt.Sprintf("❌ No reward called for %s in round %d after %s", orch.Hex(), currentRound, delayFlag.String())
+						log.Println(alertMsg)
+						sendTelegramAlert(botToken, chatID, alertMsg)
+						sentWarning = true
+					}
 				}
 			}
 		}

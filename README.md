@@ -1,7 +1,4 @@
-
 # Livepeer Reward Watchdog
-
-Monitor your Livepeer orchestrator on Arbitrum and get instant Telegram alerts if rewards are missed or called. Simple, configurable, and ready for local or server deployment.
 
 This Go script monitors the Livepeer protocol on Arbitrum and alerts you via Telegram if your orchestrator's reward has not been called in a round after a configurable delay. It's an additional safety net alongside the [web3-livepeer-bot](https://github.com/0xVires/web3-livepeer-bot) by @0xVires.
 
@@ -30,11 +27,11 @@ Run the script directly on your machine:
 export TELEGRAM_BOT_TOKEN=your_bot_token
 export TELEGRAM_CHAT_ID=your_chat_id
 
-go run main.go --delay=2h --notify-interval=1h <orchestrator-address> wss://arb1.arbitrum.io/ws
+go run main.go --delay=2h --check-interval=1h <orchestrator-address> wss://arb1.arbitrum.io/ws
 ```
 
 - `--delay` sets how long to wait after a new round before sending the first warning (default: 2h).
-- `--notify-interval` sets how often to repeat the warning if the reward is not called (default: no repeat).
+- `--check-interval` sets how often to check and repeat the warning if the reward is not called (default: 1h).
 
 ### Docker & Docker Compose
 
