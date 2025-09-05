@@ -1,14 +1,19 @@
-# Livepeer Reward Watchdog
+# Livepeer Reward Watcher
 
-This Go script monitors the Livepeer protocol on Arbitrum and alerts you via Telegram if your orchestrator's reward has not been called in a round after a configurable delay. It's an additional safety net alongside the [web3-livepeer-bot](https://github.com/0xVires/web3-livepeer-bot) by @0xVires.
+This Go script monitors the Livepeer protocol on Arbitrum and alerts you if your orchestrator's reward call hasn't been made in a round after a configurable delay. It serves as an extra safety net alongside the [web3-livepeer-bot](https://github.com/0xVires/web3-livepeer-bot) by @0xVires.
 
 ## Features
 
 - Monitors blockchain rounds and reward calls in real-time using Ethereum event subscriptions.
-- Sends alerts to Telegram when:
-  - A reward is called for your orchestrator in a round.
-  - A reward has not been called after a configurable delay (e.g., 2 hours).
-  - Repeats warnings every configurable interval (e.g., every N hours) until the reward is called.
+- **Always sends alerts for:**
+  - Connection issues and recovery
+  - Missing reward calls (core purpose)
+  - Subscription errors
+- **Optional alerts for:**
+  - Successful reward calls (`--show-success`)
+  - New round notifications (`--show-rounds`)
+- Supports both Telegram and Discord notifications
+- Automatic RPC failover with configurable retry limits
 - Both the delay and repeat interval for alerts are fully configurable via command-line flags.
 
 ## Requirements
@@ -56,13 +61,36 @@ export TELEGRAM_BOT_TOKEN=your_bot_token
 export TELEGRAM_CHAT_ID=your_chat_id
 export DISCORD_WEBHOOK_URL=your_webhook_url
 
-go run main.go --delay=2h --check-interval=1h <orchestrator-address> wss://arb1.arbitrum.io/ws
+go run main.go --delay=2h --check-interval=1h <orchestrator-address> [rpc1 rpc2 ...]
 ```
 
-- `--delay` sets how long to wait after a new round before sending the first warning (default: 2h).
-- `--check-interval` sets how often to check and repeat the warning if the reward is not called (default: 1h).
-- `--only-reward-errors` if set, only sends alerts for reward call errors (ignores success alerts).
-- `--max-retry-time` sets the maximum time to retry RPC connections before giving up (default: 30m, 0 = retry forever).
+### Command Line Flags
+
+- `--delay` - Time to wait after new round before warning (default: 2h). Example: `2h`, `30m`
+- `--check-interval` - How often to check and repeat warning if reward not called (default: 1h)
+- `--repeat` - Repeat warning every check-interval (default: true). Set to false to only warn once per round
+- `--show-success` - Send alerts when rewards are successfully called (default: false)
+- `--show-rounds` - Send alerts when new rounds start (default: false)
+- `--max-retry-time` - Max time to retry RPC connections before giving up (default: 30m, 0 = retry forever)
+
+### Usage Examples
+
+```bash
+# Minimal setup - only essential alerts (missing rewards + connection issues)
+go run main.go 0x123... wss://arb1.arbitrum.io/ws
+
+# Also show successful reward calls
+go run main.go --show-success 0x123... wss://arb1.arbitrum.io/ws
+
+# Show everything including new rounds
+go run main.go --show-success --show-rounds 0x123... wss://arb1.arbitrum.io/ws
+
+# Custom timing with only new round notifications
+go run main.go --delay=1h --check-interval=30m --show-rounds 0x123... wss://arb1.arbitrum.io/ws
+
+# Multiple RPC endpoints for failover
+go run main.go 0x123... wss://arb1.arbitrum.io/ws https://arb1.arbitrum.io/rpc
+```
 
 ### Docker & Docker Compose
 
@@ -75,7 +103,7 @@ Experienced users can use these files for containerized/server deployment.
 
 ## How it works
 
-- Subscribes to [`NewRound`](https://arbiscan.io/address/0xdd6f56DcC28D3F5f27084381fE8Df634985cc39f#code) and [`Reward`](https://arbiscan.io/address/0x35Bcf3c30594191d53231E4FF333E8A770453e40#code) events from the Livepeer protocol contracts on Arbitrum.
-- On new round: resets state and starts the timer.
-- On reward call: sends success alert and stops further warnings for that round.
-- If the delay passes and no reward is called: sends warning and repeats every interval until reward is called.
+- Monitors [`NewRound`](https://arbiscan.io/address/0xdd6f56DcC28D3F5f27084381fE8Df634985cc39f#code) and [`Reward`](https://arbiscan.io/address/0x35Bcf3c30594191d53231E4FF333E8A770453e40#code) events from Livepeer contracts on Arbitrum
+- Always alerts for: missing rewards, connection issues, errors
+- Optional alerts: successful rewards (`--show-success`), new rounds (`--show-rounds`)
+- Automatic RPC failover and reconnection

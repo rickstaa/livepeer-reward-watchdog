@@ -24,8 +24,8 @@ var bondingManager = common.HexToAddress("0x35Bcf3c30594191d53231E4FF333E8A77045
 // RoundsManager contract: https://arbiscan.io/address/0xdd6f56DcC28D3F5f27084381fE8Df634985cc39f
 var roundsManager = common.HexToAddress("0xdd6f56DcC28D3F5f27084381fE8Df634985cc39f")
 
-// Connect tries to connect to one of the provided RPC URLs and returns the first.
-func connect(rpcs []string) (*ethclient.Client, string, error) {
+// connectToRPC tries to connect to one of the provided RPC URLs and returns the first that works.
+func connectToRPC(rpcs []string) (*ethclient.Client, string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	for _, url := range rpcs {
@@ -61,7 +61,7 @@ func sendDiscordAlert(webhookURL, message string, color int) error {
 	return nil
 }
 
-// sendAlert sends to both Discord and Telegram if configured.
+// sendAlert sends alerts to messaging platforms based on configuration.
 func sendAlert(botToken, chatID, discordWebhook, message string, color int) error {
 	var failed []string
 	if discordWebhook != "" {
@@ -96,20 +96,19 @@ func sendTelegramAlert(botToken, chatID, message string) error {
 }
 
 func main() {
-	// Flags for delay and notification interval.
+	// Parse command line flags.
 	delayFlag := flag.Duration("delay", 2*time.Hour, "Time to wait after new round before warning (e.g. 2h, 30m)")
 	checkIntervalFlag := flag.Duration("check-interval", 1*time.Hour, "How often to check and repeat warning if reward not called (e.g. 1h)")
 	repeatFlag := flag.Bool("repeat", true, "Repeat warning every check-interval (true) or only send once per round (false)")
-	onlyRewardErrorsFlag := flag.Bool("only-reward-errors", false, "Only send alerts for reward call errors (ignore success alerts)")
+	showSuccessFlag := flag.Bool("show-success", false, "Send alerts when rewards are successfully called")
+	showRoundsFlag := flag.Bool("show-rounds", false, "Send alerts when new rounds start")
 	maxRetryTimeFlag := flag.Duration("max-retry-time", 30*time.Minute, "Max time to retry RPC connections before giving up (0 = retry forever)")
 	flag.Parse()
-
 	args := flag.Args()
 	if len(args) < 1 {
 		log.Fatalf("Usage: %s <orchestrator-address> [rpc1 rpc2 ...]", os.Args[0])
 	}
 	orch := common.HexToAddress(args[0])
-
 	rpcs := []string{"https://arb1.arbitrum.io/rpc"}
 	if len(args) > 1 {
 		rpcs = args[1:]
@@ -123,28 +122,29 @@ func main() {
 		log.Fatal("Either DISCORD_WEBHOOK_URL or both TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set in the environment")
 	}
 
-	// Monitor rounds and rewards with RPC failover.
+	// Main RPC failover loop.
 	var currentRound uint64
 	var roundStart time.Time
 	rewardCalled := false
 	sentWarning := false
 	retryStartTime := time.Now()
+	sentInitialMonitoringAlert := false
 	for {
 		// Stop if max retry time exceeded.
 		if *maxRetryTimeFlag > 0 && time.Since(retryStartTime) > *maxRetryTimeFlag {
-			log.Fatalf("Failed to connect to any RPC after %v, giving up", *maxRetryTimeFlag)
+			fatalMsg := fmt.Sprintf("❌ Failed to connect to any RPC after %v, giving up and shutting down reward watcher!", *maxRetryTimeFlag)
+			sendAlert(botToken, chatID, discordWebhook, fatalMsg, 0xFF0000)
+			log.Fatalf("%s", fatalMsg)
 		}
 
-		client, usedRPC, err := connect(rpcs)
+		// Try to connect to an RPC endpoint.
+		client, usedRPC, err := connectToRPC(rpcs)
 		if err != nil {
-			log.Printf("All RPCs failed, retrying in 10s...")
+			log.Printf("RPC connection failed: %v", err)
 			time.Sleep(10 * time.Second)
 			continue
 		}
 		log.Printf("Connected to %s", usedRPC)
-
-		// Reset retry timer on successful connection.
-		retryStartTime = time.Now()
 
 		// Load ABIs.
 		bondingABIBytes, err := os.ReadFile("ABI/BondingManager.json")
@@ -155,7 +155,6 @@ func main() {
 		if err != nil {
 			log.Fatalf("parse BondingManager ABI: %v", err)
 		}
-		rewardEvent := bondingABI.Events["Reward"]
 		roundsABIBytes, err := os.ReadFile("ABI/RoundsManager.json")
 		if err != nil {
 			log.Fatalf("failed to read RoundsManager ABI file: %v", err)
@@ -164,6 +163,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("parse RoundsManager ABI: %v", err)
 		}
+		rewardEvent := bondingABI.Events["Reward"]
 		newRoundEvent := roundsABI.Events["NewRound"]
 
 		// Subscribe to events.
@@ -196,10 +196,17 @@ func main() {
 			continue
 		}
 
+		// Round and Reward monitoring loop.
 		log.Println("Monitoring started...")
+		if !sentInitialMonitoringAlert {
+			monitoringMsg := fmt.Sprintf("🟢 Livepeer Reward Watchdog monitoring orchestrator %s rewards on Arbitrum", orch.Hex())
+			sendAlert(botToken, chatID, discordWebhook, monitoringMsg, 0x00FF00)
+			sentInitialMonitoringAlert = true
+		} else {
+			recoveryMsg := fmt.Sprintf("✅ RPC connection restored to %s, resuming monitoring", usedRPC)
+			sendAlert(botToken, chatID, discordWebhook, recoveryMsg, 0x00FF00)
+		}
 		ticker := time.NewTicker(*checkIntervalFlag)
-
-		// Monitor until websocket connection fails.
 	monitorLoop:
 		for {
 			select {
@@ -214,9 +221,9 @@ func main() {
 			case vLog := <-rewardCh:
 				// Reward called for this round.
 				rewardCalled = true
-				alertMsg := fmt.Sprintf("✅ Reward called for %s at block %d, tx %s", orch.Hex(), vLog.BlockNumber, vLog.TxHash.Hex())
+				alertMsg := fmt.Sprintf("✅ Reward called for %s in round %d at block %d, tx %s", orch.Hex(), currentRound, vLog.BlockNumber, vLog.TxHash.Hex())
 				log.Println(alertMsg)
-				if !*onlyRewardErrorsFlag {
+				if *showSuccessFlag {
 					sendAlert(botToken, chatID, discordWebhook, alertMsg, 0x00FF00)
 				}
 			case vLog := <-roundCh:
@@ -230,6 +237,10 @@ func main() {
 				rewardCalled = false
 				sentWarning = false
 				log.Printf("New round %d started", currentRound)
+				if *showRoundsFlag {
+					newRoundMsg := fmt.Sprintf("🔄 New round %d started", currentRound)
+					sendAlert(botToken, chatID, discordWebhook, newRoundMsg, 0x0099FF)
+				}
 			case <-ticker.C:
 				if !rewardCalled && !roundStart.IsZero() {
 					elapsed := time.Since(roundStart)
@@ -245,11 +256,12 @@ func main() {
 			}
 		}
 
-		// Cleanup before reconnecting.
+		// Cleanup state before reconnecting.
 		ticker.Stop()
 		rewardSub.Unsubscribe()
 		roundSub.Unsubscribe()
 		client.Close()
-		time.Sleep(5 * time.Second) // Brief pause before reconnecting
+		time.Sleep(5 * time.Second) // Brief pause before trying to reconnect
+		retryStartTime = time.Now() // Start retry timer
 	}
 }

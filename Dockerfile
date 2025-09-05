@@ -7,5 +7,4 @@ FROM alpine:latest
 WORKDIR /app
 COPY --from=build /app/reward-watchdog .
 COPY ABI ./ABI
-# Pass TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID at runtime for better security
 CMD ["/app/reward-watchdog"]
