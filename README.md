@@ -115,7 +115,7 @@ Docker and Docker Compose setups are provided for convenience. See:
 - [`Dockerfile`](./Dockerfile)
 - [`docker-compose.yml`](./docker-compose.yml)
 
-Experienced users can use these files for containerized/server deployment.
+Environment variables for Docker Compose should be set in a `.env` file in this directory. See main variable names in `docker-compose.yml`.
 
 ## How it works
 

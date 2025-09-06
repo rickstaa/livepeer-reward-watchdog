@@ -9,7 +9,7 @@ services:
     command:
       [
         "--delay=2h",
-        "--notify-interval=1h",
+        "--check-interval=1h",
         "<orchestrator-address>",
         "wss://arb1.arbitrum.io/ws",
       ]
