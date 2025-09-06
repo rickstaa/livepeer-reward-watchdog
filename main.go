@@ -85,7 +85,7 @@ func sendAlert(botToken, chatID, discordWebhook, message string, color int) erro
 // sendTelegramAlert sends a message to a Telegram chat using a bot.
 func sendTelegramAlert(botToken, chatID, message string) error {
 	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", botToken)
-	payload := map[string]string{"chat_id": chatID, "text": message}
+	payload := map[string]string{"chat_id": chatID, "text": message, "parse_mode": "Markdown"}
 	body, _ := json.Marshal(payload)
 	resp, err := http.Post(url, "application/json", strings.NewReader(string(body)))
 	if err != nil {
@@ -199,7 +199,9 @@ func main() {
 		// Round and Reward monitoring loop.
 		log.Println("Monitoring started...")
 		if !sentInitialMonitoringAlert {
-			monitoringMsg := fmt.Sprintf("🟢 Livepeer Reward watcher monitoring orchestrator %s rewards on Arbitrum", orch.Hex())
+			monitoringMsg := fmt.Sprintf(
+				"🟢 Livepeer Reward watcher monitoring orchestrator [%s](https://explorer.livepeer.org/accounts/%s/delegating) rewards on Arbitrum",
+				orch.Hex(), strings.ToLower(orch.Hex()))
 			sendAlert(botToken, chatID, discordWebhook, monitoringMsg, 0x00FF00)
 			sentInitialMonitoringAlert = true
 		} else {
@@ -221,7 +223,10 @@ func main() {
 			case vLog := <-rewardCh:
 				// Reward called for this round.
 				rewardCalled = true
-				alertMsg := fmt.Sprintf("✅ Reward called for %s in round %d at block %d, tx %s", orch.Hex(), currentRound, vLog.BlockNumber, vLog.TxHash.Hex())
+				address := strings.ToLower(orch.Hex())
+				alertMsg := fmt.Sprintf(
+					"✅ Reward called for [%s](https://explorer.livepeer.org/accounts/%s/delegating) in round %d at block %d, tx %s",
+					address, address, currentRound, vLog.BlockNumber, vLog.TxHash.Hex())
 				log.Println(alertMsg)
 				if *showSuccessFlag {
 					sendAlert(botToken, chatID, discordWebhook, alertMsg, 0x00FF00)
@@ -246,7 +251,10 @@ func main() {
 					elapsed := time.Since(roundStart)
 					if elapsed >= *delayFlag {
 						if *repeatFlag || !sentWarning {
-							alertMsg := fmt.Sprintf("❌ No reward called for %s in round %d after %s", orch.Hex(), currentRound, delayFlag.String())
+							address := strings.ToLower(orch.Hex())
+							alertMsg := fmt.Sprintf(
+								"❌ No reward called for [%s](https://explorer.livepeer.org/accounts/%s/delegating) in round %d after %s",
+								address, address, currentRound, delayFlag.String())
 							log.Println(alertMsg)
 							sendAlert(botToken, chatID, discordWebhook, alertMsg, 0xFF0000)
 							sentWarning = true
