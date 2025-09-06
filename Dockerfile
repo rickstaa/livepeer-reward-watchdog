@@ -1,7 +1,7 @@
 FROM golang:1.25.1-alpine AS build
 WORKDIR /app
 COPY . .
-RUN make download-abis
+RUN cd scripts && go run download-abis.go
 RUN go build -o reward-watcher main.go
 
 FROM alpine:latest
