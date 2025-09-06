@@ -9,4 +9,4 @@ RUN apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=build /app/reward-watcher .
 COPY --from=build /app/ABIs ./ABIs
-CMD ["/app/reward-watcher"]
+ENTRYPOINT ["/app/reward-watcher"]
