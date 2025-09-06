@@ -141,7 +141,7 @@ func main() {
 		client, usedRPC, err := connectToRPC(rpcs)
 		if err != nil {
 			log.Printf("RPC connection failed: %v", err)
-			time.Sleep(10 * time.Second)
+			time.Sleep(30 * time.Second)
 			continue
 		}
 		log.Printf("Connected to %s", usedRPC)
