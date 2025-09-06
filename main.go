@@ -200,12 +200,12 @@ func main() {
 		log.Println("Monitoring started...")
 		if !sentInitialMonitoringAlert {
 			monitoringMsg := fmt.Sprintf(
-				"🟢 Livepeer Reward watcher monitoring orchestrator [%s](https://explorer.livepeer.org/accounts/%s/delegating) rewards on Arbitrum",
+				"🟢 Livepeer Reward watcher monitoring orchestrator [%s](https://explorer.livepeer.org/accounts/%s/delegating) on Arbitrum.",
 				orch.Hex(), strings.ToLower(orch.Hex()))
 			sendAlert(botToken, chatID, discordWebhook, monitoringMsg, 0x00FF00)
 			sentInitialMonitoringAlert = true
 		} else {
-			recoveryMsg := fmt.Sprintf("✅ RPC connection restored to %s, resuming monitoring", usedRPC)
+			recoveryMsg := fmt.Sprintf("✅ RPC connection restored to %s, resuming monitoring.", usedRPC)
 			sendAlert(botToken, chatID, discordWebhook, recoveryMsg, 0x00FF00)
 		}
 		ticker := time.NewTicker(*checkIntervalFlag)
@@ -224,9 +224,10 @@ func main() {
 				// Reward called for this round.
 				rewardCalled = true
 				address := strings.ToLower(orch.Hex())
+				txHash := vLog.TxHash.Hex()
 				alertMsg := fmt.Sprintf(
-					"✅ Reward called for [%s](https://explorer.livepeer.org/accounts/%s/delegating) in round %d at block %d, tx %s",
-					address, address, currentRound, vLog.BlockNumber, vLog.TxHash.Hex())
+					"✅ Reward called for [%s](https://explorer.livepeer.org/accounts/%s/delegating) in round %d at block %d, [tx %s](https://arbiscan.io/tx/%s).",
+					address, address, currentRound, vLog.BlockNumber, txHash, txHash)
 				log.Println(alertMsg)
 				if *showSuccessFlag {
 					sendAlert(botToken, chatID, discordWebhook, alertMsg, 0x00FF00)
@@ -243,7 +244,7 @@ func main() {
 				sentWarning = false
 				log.Printf("New round %d started", currentRound)
 				if *showRoundsFlag {
-					newRoundMsg := fmt.Sprintf("🔄 New round %d started", currentRound)
+					newRoundMsg := fmt.Sprintf("🔄 New round %d started.", currentRound)
 					sendAlert(botToken, chatID, discordWebhook, newRoundMsg, 0x0099FF)
 				}
 			case <-ticker.C:
@@ -253,7 +254,7 @@ func main() {
 						if *repeatFlag || !sentWarning {
 							address := strings.ToLower(orch.Hex())
 							alertMsg := fmt.Sprintf(
-								"❌ No reward called for [%s](https://explorer.livepeer.org/accounts/%s/delegating) in round %d after %s",
+								"❌ No reward called for [%s](https://explorer.livepeer.org/accounts/%s/delegating) in round %d after %s.",
 								address, address, currentRound, delayFlag.String())
 							log.Println(alertMsg)
 							sendAlert(botToken, chatID, discordWebhook, alertMsg, 0xFF0000)
