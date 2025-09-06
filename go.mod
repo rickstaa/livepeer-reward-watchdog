@@ -1,4 +1,4 @@
-module reward_watchdog
+module reward_watcher
 
 go 1.21
 

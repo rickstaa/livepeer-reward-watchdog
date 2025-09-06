@@ -46,7 +46,7 @@ func sendDiscordAlert(webhookURL, message string, color int) error {
 	payload := map[string]interface{}{
 		"embeds": []map[string]interface{}{
 			{
-				"title":       "Livepeer Reward Watchdog Alert",
+				"title":       "Livepeer Reward watcher Alert",
 				"description": message,
 				"color":       color,
 			},
@@ -146,22 +146,22 @@ func main() {
 		}
 		log.Printf("Connected to %s", usedRPC)
 
-		// Load ABIs.
-		bondingABIBytes, err := os.ReadFile("ABI/BondingManager.json")
+		// Load ABIs (downloaded at build time).
+		bondingABIBytes, err := os.ReadFile("ABIs/BondingManager.json")
 		if err != nil {
-			log.Fatalf("failed to read BondingManager ABI file: %v", err)
+			log.Fatalf("failed to read BondingManager ABI file: %v (run 'make download-abis' to download ABIs)", err)
 		}
 		bondingABI, err := abi.JSON(strings.NewReader(string(bondingABIBytes)))
 		if err != nil {
-			log.Fatalf("parse BondingManager ABI: %v", err)
+			log.Fatalf("failed to parse BondingManager ABI: %v", err)
 		}
-		roundsABIBytes, err := os.ReadFile("ABI/RoundsManager.json")
+		roundsABIBytes, err := os.ReadFile("ABIs/RoundsManager.json")
 		if err != nil {
-			log.Fatalf("failed to read RoundsManager ABI file: %v", err)
+			log.Fatalf("failed to read RoundsManager ABI file: %v (run 'make download-abis' to download ABIs)", err)
 		}
 		roundsABI, err := abi.JSON(strings.NewReader(string(roundsABIBytes)))
 		if err != nil {
-			log.Fatalf("parse RoundsManager ABI: %v", err)
+			log.Fatalf("failed to parse RoundsManager ABI: %v", err)
 		}
 		rewardEvent := bondingABI.Events["Reward"]
 		newRoundEvent := roundsABI.Events["NewRound"]
@@ -199,7 +199,7 @@ func main() {
 		// Round and Reward monitoring loop.
 		log.Println("Monitoring started...")
 		if !sentInitialMonitoringAlert {
-			monitoringMsg := fmt.Sprintf("🟢 Livepeer Reward Watchdog monitoring orchestrator %s rewards on Arbitrum", orch.Hex())
+			monitoringMsg := fmt.Sprintf("🟢 Livepeer Reward watcher monitoring orchestrator %s rewards on Arbitrum", orch.Hex())
 			sendAlert(botToken, chatID, discordWebhook, monitoringMsg, 0x00FF00)
 			sentInitialMonitoringAlert = true
 		} else {

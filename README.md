@@ -52,6 +52,22 @@ More info: [Discord Webhooks Guide](https://support.discord.com/hc/en-us/article
 
 ## Usage
 
+### Building
+
+You need to download ABIs before building the application:
+
+```bash
+# Download ABIs first, then build
+make download-abis
+make build
+
+# Or do both steps manually
+make download-abis
+go build -o reward_watcher main.go
+```
+
+To update ABIs later, just run `make update-abis`.
+
 ### Local Setup
 
 Run the script directly on your machine:
