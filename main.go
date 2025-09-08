@@ -100,8 +100,8 @@ func main() {
 	delayFlag := flag.Duration("delay", 2*time.Hour, "Time to wait after new round before warning (e.g. 2h, 30m)")
 	checkIntervalFlag := flag.Duration("check-interval", 1*time.Hour, "How often to check and repeat warning if reward not called (e.g. 1h)")
 	repeatFlag := flag.Bool("repeat", true, "Repeat warning every check-interval (true) or only send once per round (false)")
-	showSuccessFlag := flag.Bool("show-success", false, "Send alerts when rewards are successfully called")
-	showRoundsFlag := flag.Bool("show-rounds", false, "Send alerts when new rounds start")
+	disableSuccessAlertsFlag := flag.Bool("disable-success-alerts", false, "Disable alerts when rewards are successfully called (default: false)")
+	disableRoundAlertsFlag := flag.Bool("disable-round-alerts", false, "Disable alerts when new rounds start (default: false)")
 	maxRetryTimeFlag := flag.Duration("max-retry-time", 30*time.Minute, "Max time to retry RPC connections before giving up (0 = retry forever)")
 	flag.Parse()
 	args := flag.Args()
@@ -229,7 +229,7 @@ func main() {
 					"✅ Reward called for [%s](https://explorer.livepeer.org/accounts/%s/delegating) in round %d at block %d, [tx %s](https://arbiscan.io/tx/%s).",
 					address, address, currentRound, vLog.BlockNumber, txHash, txHash)
 				log.Println(alertMsg)
-				if *showSuccessFlag {
+				if !*disableSuccessAlertsFlag {
 					sendAlert(botToken, chatID, discordWebhook, alertMsg, 0x00FF00)
 				}
 			case vLog := <-roundCh:
@@ -243,7 +243,7 @@ func main() {
 				rewardCalled = false
 				sentWarning = false
 				log.Printf("New round %d started", currentRound)
-				if *showRoundsFlag {
+				if !*disableRoundAlertsFlag {
 					newRoundMsg := fmt.Sprintf("🔄 New round %d started.", currentRound)
 					sendAlert(botToken, chatID, discordWebhook, newRoundMsg, 0x0099FF)
 				}

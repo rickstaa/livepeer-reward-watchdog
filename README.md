@@ -1,17 +1,17 @@
 # Livepeer Reward Watcher
 
-This Go script monitors the Livepeer protocol on Arbitrum and alerts you if your orchestrator's reward call hasn't been made in a round after a configurable delay. It serves as an extra safety net alongside the [web3-livepeer-bot](https://github.com/0xVires/web3-livepeer-bot) by @0xVires.
+This Go script monitors the Livepeer protocol on Arbitrum and notifies you if your orchestrator's reward call hasn't been made in a round after a configurable delay (the main alert). By default, it also notifies you about successful reward calls and new rounds, but these can be disabled. It serves as an extra safety net alongside the [web3-livepeer-bot](https://github.com/0xVires/web3-livepeer-bot) by @0xVires.
 
 ## Features
 
 - Monitors blockchain rounds and reward calls in real-time using Ethereum event subscriptions.
 - **Always sends alerts for:**
-  - Connection issues and recovery
   - Missing reward calls (core purpose)
+  - Connection issues and recovery
   - Subscription errors
-- **Optional alerts for:**
-  - Successful reward calls (`--show-success`)
-  - New round notifications (`--show-rounds`)
+- **Also sends alerts for (enabled by default, can be disabled):**
+  - Successful reward calls (`--disable-success-alerts`)
+  - New round notifications (`--disable-round-alerts`)
 - Supports both Telegram and Discord notifications
 - Automatic RPC failover with configurable retry limits
 - Both the delay and repeat interval for alerts are fully configurable via command-line flags.
@@ -85,8 +85,8 @@ go run main.go --delay=2h --check-interval=1h <orchestrator-address> [rpc1 rpc2 
 - `--delay` - Time to wait after new round before warning (default: 2h). Example: `2h`, `30m`
 - `--check-interval` - How often to check and repeat warning if reward not called (default: 1h)
 - `--repeat` - Repeat warning every check-interval (default: true). Set to false to only warn once per round
-- `--show-success` - Send alerts when rewards are successfully called (default: false)
-- `--show-rounds` - Send alerts when new rounds start (default: false)
+- `--disable-success-alerts` - Disable alerts when rewards are successfully called (default: false)
+- `--disable-round-alerts` - Disable alerts when new rounds start (default: false)
 - `--max-retry-time` - Max time to retry RPC connections before giving up (default: 30m, 0 = retry forever)
 
 ### Usage Examples
@@ -95,14 +95,14 @@ go run main.go --delay=2h --check-interval=1h <orchestrator-address> [rpc1 rpc2 
 # Minimal setup - only essential alerts (missing rewards + connection issues)
 go run main.go 0x123... wss://arb1.arbitrum.io/ws
 
-# Also show successful reward calls
-go run main.go --show-success 0x123... wss://arb1.arbitrum.io/ws
+# Disable successful reward call alerts
+go run main.go --disable-success-alerts 0x123... wss://arb1.arbitrum.io/ws
 
-# Show everything including new rounds
-go run main.go --show-success --show-rounds 0x123... wss://arb1.arbitrum.io/ws
+# Disable both successful reward call and new round alerts
+go run main.go --disable-success-alerts --disable-round-alerts 0x123... wss://arb1.arbitrum.io/ws
 
 # Custom timing with only new round notifications
-go run main.go --delay=1h --check-interval=30m --show-rounds 0x123... wss://arb1.arbitrum.io/ws
+go run main.go --delay=1h --check-interval=30m --no-rounds 0x123... wss://arb1.arbitrum.io/ws
 
 # Multiple RPC endpoints for failover
 go run main.go 0x123... wss://arb1.arbitrum.io/ws https://arb1.arbitrum.io/rpc
@@ -121,5 +121,5 @@ Environment variables for Docker Compose should be set in a `.env` file in this 
 
 - Monitors [`NewRound`](https://arbiscan.io/address/0xdd6f56DcC28D3F5f27084381fE8Df634985cc39f#code) and [`Reward`](https://arbiscan.io/address/0x35Bcf3c30594191d53231E4FF333E8A770453e40#code) events from Livepeer contracts on Arbitrum
 - Always alerts for: missing rewards, connection issues, errors
-- Optional alerts: successful rewards (`--show-success`), new rounds (`--show-rounds`)
+- Also sends alerts for successful rewards and new rounds by default (can be disabled with `--no-success` and `--no-rounds`)
 - Automatic RPC failover and reconnection
