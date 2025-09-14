@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -23,6 +24,21 @@ var bondingManager = common.HexToAddress("0x35Bcf3c30594191d53231E4FF333E8A77045
 
 // RoundsManager contract: https://arbiscan.io/address/0xdd6f56DcC28D3F5f27084381fE8Df634985cc39f
 var roundsManager = common.HexToAddress("0xdd6f56DcC28D3F5f27084381fE8Df634985cc39f")
+
+// maskRPCURL returns the scheme://host/path of the RPC URL, omitting userinfo, port, and query.
+func maskRPCURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "(invalid url)"
+	}
+
+	// Only show scheme://host/path (omit userinfo, port, query, fragment).
+	masked := u.Scheme + "://" + u.Hostname()
+	if u.Path != "" {
+		masked += u.Path
+	}
+	return masked
+}
 
 // connectToRPC tries to connect to one of the provided RPC URLs and returns the first that works.
 func connectToRPC(rpcs []string) (*ethclient.Client, string, error) {
@@ -144,7 +160,7 @@ func main() {
 			time.Sleep(30 * time.Second)
 			continue
 		}
-		log.Printf("Connected to %s", usedRPC)
+		log.Printf("Connected to %s", maskRPCURL(usedRPC))
 
 		// Load ABIs (downloaded at build time).
 		bondingABIBytes, err := os.ReadFile("ABIs/BondingManager.json")
@@ -205,7 +221,7 @@ func main() {
 			sendAlert(botToken, chatID, discordWebhook, monitoringMsg, 0x00FF00)
 			sentInitialMonitoringAlert = true
 		} else {
-			recoveryMsg := fmt.Sprintf("✅ RPC connection restored to %s, resuming monitoring.", usedRPC)
+			recoveryMsg := fmt.Sprintf("✅ RPC connection restored to %s, resuming monitoring.", maskRPCURL(usedRPC))
 			sendAlert(botToken, chatID, discordWebhook, recoveryMsg, 0x00FF00)
 		}
 		ticker := time.NewTicker(*checkIntervalFlag)
